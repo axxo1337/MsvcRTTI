@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include <Windows.h>
+
 namespace MsvcRTTI
 {
     //
@@ -88,6 +90,24 @@ namespace MsvcRTTI
         TypeDescriptor* p_type_descriptor{ reinterpret_cast<TypeDescriptor*>(image_base + p_locator->type_descriptor) };
 
         return demangleName(p_type_descriptor->name);
+    }
+
+    std::string extractClassNameExternal(HANDLE h_process, uintptr_t image_base, void* p_object)
+    {
+        void** vf_table{};
+        ReadProcessMemory(h_process, p_object, &vf_table, sizeof(uintptr_t), nullptr);
+
+        CompleteObjectLocator* p_locator{};
+        ReadProcessMemory(h_process, vf_table - 1, &p_locator, sizeof(uintptr_t), nullptr);
+
+        CompleteObjectLocator locator{};
+        ReadProcessMemory(h_process, p_locator, &locator, sizeof(CompleteObjectLocator), nullptr);
+
+        constexpr size_t MAX_RTTI_NAME_LENGTH = 256; // Since the object doesn't specify the maximum size of the name we use a "reasonable" assumption
+        TypeDescriptor type_descriptor{};
+        ReadProcessMemory(h_process, (void*)(image_base + locator.type_descriptor), &type_descriptor, sizeof(TypeDescriptor) + MAX_RTTI_NAME_LENGTH, nullptr);
+
+        return demangleName(type_descriptor.name);
     }
 
     std::vector<std::string> extractAllBaseClassNames(uintptr_t image_base, void* p_object)
