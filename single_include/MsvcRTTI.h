@@ -5,8 +5,6 @@
 #include <string>
 #include <vector>
 
-#include <Windows.h>
-
 namespace MsvcRTTI
 {
     //
@@ -52,6 +50,12 @@ namespace MsvcRTTI
     };
 
     //
+    // [SECTION] Variables and constants
+    //
+
+    constexpr size_t MAX_RTTI_NAME_LENGTH = 256; // Since the object doesn't specify the maximum size of the name we use a "reasonable" assumption for external functions
+
+    //
     // [SECTION] Functions
     //
 
@@ -95,17 +99,32 @@ namespace MsvcRTTI
     std::string extractClassNameExternal(HANDLE h_process, uintptr_t image_base, void* p_object)
     {
         void** vf_table{};
-        ReadProcessMemory(h_process, p_object, &vf_table, sizeof(uintptr_t), nullptr);
+        if (!ReadProcessMemory(h_process, p_object, &vf_table, sizeof(uintptr_t), nullptr))
+        {
+            std::cerr << "[-] Failed to read virtual function table pointer" << std::endl;
+            return "";
+        }
 
         CompleteObjectLocator* p_locator{};
-        ReadProcessMemory(h_process, vf_table - 1, &p_locator, sizeof(uintptr_t), nullptr);
+        if (!ReadProcessMemory(h_process, vf_table - 1, &p_locator, sizeof(uintptr_t), nullptr))
+        {
+            std::cerr << "[-] Failed to read object locator pointer" << std::endl;
+            return "";
+        }
 
         CompleteObjectLocator locator{};
-        ReadProcessMemory(h_process, p_locator, &locator, sizeof(CompleteObjectLocator), nullptr);
+        if (!ReadProcessMemory(h_process, p_locator, &locator, sizeof(CompleteObjectLocator), nullptr))
+        {
+            std::cerr << "[-] Failed to read locator object" << std::endl;
+            return "";
+        }
 
-        constexpr size_t MAX_RTTI_NAME_LENGTH = 256; // Since the object doesn't specify the maximum size of the name we use a "reasonable" assumption
         TypeDescriptor type_descriptor{};
-        ReadProcessMemory(h_process, (void*)(image_base + locator.type_descriptor), &type_descriptor, sizeof(TypeDescriptor) + MAX_RTTI_NAME_LENGTH, nullptr);
+        if (!ReadProcessMemory(h_process, (void*)(image_base + locator.type_descriptor), &type_descriptor, sizeof(TypeDescriptor) + MAX_RTTI_NAME_LENGTH, nullptr))
+        {
+            std::cerr << "[-] Failed to read type descriptor object" << std::endl;
+            return "";
+        }
 
         return demangleName(type_descriptor.name);
     }
@@ -126,6 +145,69 @@ namespace MsvcRTTI
             TypeDescriptor* p_type_descriptor{ reinterpret_cast<TypeDescriptor*>(image_base + p_base_descriptor->type_descriptor) };
 
             base_class_names.push_back(demangleName(p_type_descriptor->name));
+        }
+
+        return base_class_names;
+    }
+
+    std::vector<std::string> extractAllBaseClassNamesExternal(HANDLE h_process, uintptr_t image_base, void* p_object)
+    {
+        void** vf_table{};
+        if (!ReadProcessMemory(h_process, p_object, &vf_table, sizeof(uintptr_t), nullptr))
+        {
+            std::cerr << "[-] Failed to read virtual function table pointer" << std::endl;
+            return {};
+        }
+
+        CompleteObjectLocator* p_locator{};
+        if (!ReadProcessMemory(h_process, vf_table - 1, &p_locator, sizeof(uintptr_t), nullptr))
+        {
+            std::cerr << "[-] Failed to read object locator pointer" << std::endl;
+            return {};
+        }
+
+        CompleteObjectLocator locator{};
+        if (!ReadProcessMemory(h_process, p_locator, &locator, sizeof(CompleteObjectLocator), nullptr))
+        {
+            std::cerr << "[-] Failed to read locator object" << std::endl;
+            return {};
+        }
+
+        ClassHierarchyDescriptor hierarchy_descriptor{};
+        if (!ReadProcessMemory(h_process, (void*)(image_base + locator.class_hierarchy_descriptor), &hierarchy_descriptor, sizeof(ClassHierarchyDescriptor), nullptr))
+        {
+            std::cerr << "[-] Failed to read hierarchy descriptor object" << std::endl;
+            return {};
+        }
+
+        std::vector<long> base_class_rvas(hierarchy_descriptor.base_class_descriptor_list_length);
+        if (!ReadProcessMemory(h_process, (void*)(image_base + hierarchy_descriptor.base_class_descriptor_rva_list), base_class_rvas.data(), hierarchy_descriptor.base_class_descriptor_list_length * sizeof(long), nullptr))
+        {
+            std::cerr << "[-] Failed to read base class descriptor rvas" << std::endl;
+            return {};
+        }
+
+        std::vector<std::string> base_class_names;
+
+        for (int i = 0; i < hierarchy_descriptor.base_class_descriptor_list_length; i++)
+        {
+            BaseClassDescriptor base_descriptor{};
+
+            if (!ReadProcessMemory(h_process, (void*)(image_base + base_class_rvas[i]), &base_descriptor, sizeof(BaseClassDescriptor), nullptr))
+            {
+                std::cerr << "[-] Failed to read base descriptor " << i << ". Error: " << GetLastError() << std::endl;
+                continue;
+            }
+
+            std::vector<std::uint8_t> type_descriptor_buffer(sizeof(TypeDescriptor) + MAX_RTTI_NAME_LENGTH);
+
+            if (!ReadProcessMemory(h_process, (void*)(image_base + base_descriptor.type_descriptor), type_descriptor_buffer.data(), type_descriptor_buffer.size(), nullptr))
+            {
+                std::cerr << "[-] Failed to read type descriptor " << i << ". Error: " << GetLastError() << std::endl;
+                continue;
+            }
+
+            base_class_names.push_back(demangleName(reinterpret_cast<TypeDescriptor*>(type_descriptor_buffer.data())->name));
         }
 
         return base_class_names;
