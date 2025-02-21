@@ -51,7 +51,7 @@ Here's an example of extracting class hierarchy information from a game process:
 
 ![RTTI Extraction Example](repo/poc_results_example1.png)
 
-The figure shows successful extraction of a complete class hierarchy from a Counter-Strike 2 process object from a player pool.
+The figure above shows a successful extraction of the complete class hierarchy from a Counter-Strike 2 object of a player pool.
 
 ## Technical Details
 
