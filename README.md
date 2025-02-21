@@ -45,6 +45,28 @@ std::string class_name = MsvcRTTI::extractClassNameExternal(process_handle, imag
 std::vector<std::string> base_classes = MsvcRTTI::extractAllBaseClassNamesExternal(process_handle, image_base, p_object);
 ```
 
+## Examples
+
+The `examples` folder contains sample implementations demonstrating how to use the library:
+
+### External Process RTTI Extraction Example
+
+The `example_poc_1.cpp` demonstrates how to extract RTTI information from an external process:
+
+```cpp
+RTTI.exe <process_name> <module_name | object_address> <object_address (if module_name specified)>
+```
+
+For example:
+```bash
+RTTI.exe cs2.exe client.dll 0x000011DAEAE0000
+```
+
+This example shows how to:
+- Get a process handle using the process name
+- Obtain the base address of a module
+- Extract and display the complete inheritance hierarchy of an object at a specific address
+
 ## Example Output
 
 Here's an example of extracting class hierarchy information from a game process:
